@@ -2,171 +2,193 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Medidor AR Pro</title>
-    <link rel="manifest" href="manifest.json">
-    <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
-    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
-
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Medidor AR Preciso</title>
+    <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+    
     <style>
-        body { margin: 0; overflow: hidden; font-family: 'Segoe UI', sans-serif; background-color: #000; touch-action: none; }
+        /* Estilos para deixar bonito e fixo na tela */
+        body { font-family: sans-serif; margin: 0; overflow: hidden; }
         
-        /* Centralizar tudo e garantir que caiba na tela do celular */
-        #menu-inicial {
-            position: fixed; inset: 0; background: #111; 
-            display: flex; flex-direction: column; align-items: center; 
-            justify-content: center; z-index: 9999; color: white;
+        #overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 10; display: flex; flex-direction: column;
+            justify-content: space-between; align-items: center;
         }
 
-        /* Painel Superior de Informações */
-        #display-info {
-            position: fixed; top: 0; left: 0; width: 100%; background: rgba(0,0,0,0.8);
-            color: #00ff00; padding: 15px; text-align: center; font-size: 20px;
-            font-weight: bold; z-index: 1000; border-bottom: 2px solid #00ff00;
-            display: none;
+        #info-topo {
+            margin-top: 20px; background: rgba(0,0,0,0.7); color: #0f0;
+            padding: 15px 30px; border-radius: 30px; font-size: 24px; font-weight: bold;
+            border: 2px solid #0f0; pointer-events: auto;
         }
 
-        /* Botão de Ação Principal (Embaixo) */
-        #controles-inferiores {
-            position: fixed; bottom: 40px; left: 0; width: 100%;
-            display: none; flex-direction: column; align-items: center; z-index: 1000;
+        #instrucao {
+            color: white; background: rgba(0,0,0,0.5); padding: 5px 10px;
+            border-radius: 5px; margin-top: 5px; font-size: 14px;
         }
 
-        .btn-acao {
-            background: #008cff; color: white; border: none; padding: 20px 40px;
-            border-radius: 50px; font-size: 18px; font-weight: bold; 
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5); width: 80%;
+        #botao-acao {
+            margin-bottom: 50px; background: white; border: none;
+            width: 80px; height: 80px; border-radius: 50%;
+            box-shadow: 0 0 10px rgba(255,255,255,0.5); pointer-events: auto;
+            display: flex; align-items: center; justify-content: center;
+        }
+        
+        /* Círculo interno do botão para parecer obturador de câmera */
+        #botao-acao::after {
+            content: ''; width: 60px; height: 60px;
+            background: #ff4444; border-radius: 50%; border: 2px solid #333;
         }
 
-        .btn-reset {
-            background: #444; color: #ccc; border: none; padding: 10px;
-            margin-top: 15px; border-radius: 5px; width: 40%;
-        }
-
-        #btn-fechar {
-            position: fixed; top: 70px; right: 10px; z-index: 1001;
+        #btn-limpar {
+            position: absolute; top: 20px; right: 20px; pointer-events: auto;
             background: #ff4444; color: white; border: none; padding: 10px;
-            border-radius: 5px; display: none;
+            border-radius: 5px; font-weight: bold;
         }
     </style>
+
+    <script>
+        // COMPONENTE MÁGICO: Esse script faz a mira "grudar" no chão real
+        AFRAME.registerComponent('ar-hit-test', {
+            init: function () {
+                this.xrHitTestSource = null;
+                this.viewerSpace = null;
+                this.refSpace = null;
+
+                this.el.sceneEl.renderer.xr.addEventListener('sessionstart', (ev) => {
+                    this.viewerSpace = ev.target.getReferenceSpace('viewer');
+                    this.refSpace = ev.target.getReferenceSpace('local');
+                    this.requestHitTestSource();
+                });
+
+                this.el.sceneEl.renderer.xr.addEventListener('sessionend', () => {
+                    this.xrHitTestSource = null;
+                });
+            },
+            requestHitTestSource: function () {
+                const session = this.el.sceneEl.renderer.xr.getSession();
+                session.requestReferenceSpace('viewer').then((space) => {
+                    session.requestHitTestSource({ space }).then((source) => {
+                        this.xrHitTestSource = source;
+                    });
+                });
+            },
+            tick: function () {
+                if (!this.xrHitTestSource) return;
+                const frame = this.el.sceneEl.frame;
+                if (!frame) return;
+
+                // Pede ao Android para testar colisão com o mundo real
+                const hitTestResults = frame.getHitTestResults(this.xrHitTestSource);
+
+                if (hitTestResults.length > 0) {
+                    const pose = hitTestResults[0].getPose(this.refSpace);
+                    this.el.setAttribute('visible', true);
+                    this.el.object3D.position.copy(pose.transform.position);
+                    this.el.object3D.quaternion.copy(pose.transform.orientation);
+                } else {
+                    this.el.setAttribute('visible', false);
+                }
+            }
+        });
+    </script>
 </head>
 <body>
 
-    <div id="menu-inicial">
-        <h1 style="margin-bottom: 20px;">MEDIDOR AR</h1>
-        <button class="btn-acao" onclick="iniciarApp()">ABRIR CÂMERA</button>
-    </div>
-
-    <div id="display-info">Pronto para medir</div>
-    <button id="btn-fechar" onclick="location.reload()">Sair</button>
-
-    <div id="controles-inferiores">
-        <button id="btn-principal" class="btn-acao" onclick="processarClique()">MARCAR PONTO A</button>
-        <button class="btn-reset" onclick="resetar()">Limpar Tudo</button>
-    </div>
-
-    <a-scene embedded arjs="sourceType: webcam; debugUIEnabled: false;" style="display: none;" id="cena">
-        <a-camera id="camera" position="0 0 0">
-            <a-entity cursor="fuse: false" position="0 0 -1"
-                      geometry="primitive: ring; radiusInner: 0.02; radiusOuter: 0.03"
-                      material="color: white; shader: flat">
-            </a-entity>
-        </a-camera>
+    <div id="overlay">
+        <div style="text-align:center;">
+            <div id="info-topo">0.00 m</div>
+            <div id="instrucao">Procure uma superfície bem iluminada</div>
+        </div>
         
-        <a-entity id="elementos-ar"></a-entity>
-        <a-entity id="linha-guia" line="color: yellow; opacity: 0.7"></a-entity>
+        <button id="btn-limpar" onclick="limpar()">Limpar</button>
+
+        <button id="botao-acao" onclick="marcarPonto()"></button>
+    </div>
+
+    <a-scene webxr="optionalFeatures: hit-test; overlayElement: #overlay" background="color: transparent">
+        
+        <a-entity id="mira" ar-hit-test visible="false">
+            <a-ring color="white" radius-inner="0.05" radius-outer="0.06" rotation="-90 0 0"></a-ring>
+            <a-circle color="white" radius="0.01" rotation="-90 0 0"></a-circle>
+        </a-entity>
+
+        <a-entity id="marcacoes"></a-entity>
+
+        <a-entity id="linha" line="color: #0f0; opacity: 1"></a-entity>
+
     </a-scene>
 
     <script>
         let pontos = [];
-        const info = document.getElementById('display-info');
-        const btnPrincipal = document.getElementById('btn-principal');
-        const elementos = document.querySelector('#elementos-ar');
-        const linhaGuia = document.querySelector('#linha-guia');
-        const camera = document.querySelector('#camera');
+        const mira = document.getElementById('mira');
+        const marcacoes = document.getElementById('marcacoes');
+        const display = document.getElementById('info-topo');
+        const instrucao = document.getElementById('instrucao');
+        const linha = document.getElementById('linha');
 
-        function iniciarApp() {
-            document.getElementById('menu-inicial').style.display = 'none';
-            document.getElementById('cena').style.display = 'block';
-            document.getElementById('display-info').style.display = 'block';
-            document.getElementById('controles-inferiores').style.display = 'flex';
-            document.getElementById('btn-fechar').style.display = 'block';
-            window.dispatchEvent(new Event('resize'));
-        }
-
-        // Loop de animação para a linha seguir a câmera
-        function update() {
-            if (pontos.length === 1) {
-                const posCam = new THREE.Vector3();
-                camera.object3D.getWorldPosition(posCam);
-                const p1 = pontos[0];
-                
-                linhaGuia.setAttribute('line', {
-                    start: `${p1.x} ${p1.y} ${p1.z}`,
-                    end: `${posCam.x} ${posCam.y} ${posCam.z}`
-                });
-
-                // Atualiza distância em tempo real no topo
-                const distAtual = p1.distanceTo(posCam);
-                info.innerText = `Medindo: ${distAtual.toFixed(2)}m`;
+        function marcarPonto() {
+            // Só marca se a mira estiver visível (grudada no chão)
+            if (!mira.getAttribute('visible')) {
+                alert("Aponte para o chão até aparecer o círculo branco!");
+                return;
             }
-            requestAnimationFrame(update);
-        }
-        update();
 
-        function processarClique() {
-            const posAtual = new THREE.Vector3();
-            camera.object3D.getWorldPosition(posAtual);
-            const pontoMarcado = posAtual.clone();
-
-            if (pontos.length === 0) {
-                // Marcou Ponto A
-                pontos.push(pontoMarcado);
-                criarEsfera(pontoMarcado, "yellow");
-                btnPrincipal.innerText = "MARCAR PONTO B";
-                btnPrincipal.style.background = "#28a745";
-                info.innerText = "Ponto A fixado. Mova-se!";
-            } 
-            else if (pontos.length === 1) {
-                // Marcou Ponto B
-                pontos.push(pontoMarcado);
-                criarEsfera(pontoMarcado, "#00ff00");
-                
-                const d = pontos[0].distanceTo(pontos[1]);
-                info.innerHTML = `DISTÂNCIA FINAL: ${d.toFixed(2)} metros`;
-                
-                btnPrincipal.innerText = "MEDIR NOVO";
-                btnPrincipal.style.background = "#008cff";
-                linhaGuia.setAttribute('line', 'opacity', 0); // Esconde linha guia
-                
-                // Desenha linha fixa final
-                const linhaFinal = document.createElement('a-entity');
-                linhaFinal.setAttribute('line', {
-                    start: `${pontos[0].x} ${pontos[0].y} ${pontos[0].z}`,
-                    end: `${pontos[1].x} ${pontos[1].y} ${pontos[1].z}`,
-                    color: '#00ff00'
-                });
-                elementos.appendChild(linhaFinal);
-            } else {
-                resetar();
-            }
-        }
-
-        function criarEsfera(pos, cor) {
+            // Pega a posição exata da mira no mundo real
+            const posicao = mira.object3D.position.clone();
+            
+            // Adiciona ponto visual
             const esfera = document.createElement('a-sphere');
-            esfera.setAttribute('position', `${pos.x} ${pos.y} ${pos.z}`);
-            esfera.setAttribute('radius', '0.03');
-            esfera.setAttribute('color', cor);
-            elementos.appendChild(esfera);
+            esfera.setAttribute('position', posicao);
+            esfera.setAttribute('radius', '0.02');
+            esfera.setAttribute('color', pontos.length === 0 ? 'yellow' : 'red');
+            marcacoes.appendChild(esfera);
+
+            pontos.push(posicao);
+
+            if (pontos.length === 1) {
+                instrucao.innerText = "Agora caminhe até o Ponto B e clique";
+                // Inicia loop para desenhar linha elástica
+                medirTempoReal();
+            } 
+            else if (pontos.length === 2) {
+                // Finaliza medição
+                const d = pontos[0].distanceTo(pontos[1]);
+                display.innerText = d.toFixed(2) + " m";
+                instrucao.innerText = "Medição concluída!";
+                desenharLinha(pontos[0], pontos[1]);
+            }
         }
 
-        function resetar() {
+        // Função que atualiza a distância enquanto você mexe o celular
+        function medirTempoReal() {
+            if (pontos.length !== 1) return;
+            
+            requestAnimationFrame(medirTempoReal);
+            
+            if (mira.getAttribute('visible')) {
+                const p1 = pontos[0];
+                const p2 = mira.object3D.position;
+                
+                // Atualiza o texto
+                const d = p1.distanceTo(p2);
+                display.innerText = d.toFixed(2) + " m";
+
+                // Atualiza a linha visual
+                linha.setAttribute('line', `start: ${p1.x} ${p1.y} ${p1.z}; end: ${p2.x} ${p2.y} ${p2.z}`);
+            }
+        }
+
+        function desenharLinha(p1, p2) {
+            linha.setAttribute('line', `start: ${p1.x} ${p1.y} ${p1.z}; end: ${p2.x} ${p2.y} ${p2.z}`);
+        }
+
+        function limpar() {
             pontos = [];
-            elementos.innerHTML = '';
-            linhaGuia.setAttribute('line', 'opacity', 0.7);
-            btnPrincipal.innerText = "MARCAR PONTO A";
-            btnPrincipal.style.background = "#008cff";
-            info.innerText = "Pronto para medir";
+            marcacoes.innerHTML = '';
+            linha.removeAttribute('line');
+            display.innerText = "0.00 m";
+            instrucao.innerText = "Aponte para o chão para começar";
         }
     </script>
 </body>
