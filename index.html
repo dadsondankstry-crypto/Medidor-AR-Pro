@@ -2,127 +2,171 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Medidor AR Pro</title>
     <link rel="manifest" href="manifest.json">
     <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
     <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
 
     <style>
-        body { margin: 0; overflow: hidden; font-family: sans-serif; background-color: #000; }
+        body { margin: 0; overflow: hidden; font-family: 'Segoe UI', sans-serif; background-color: #000; touch-action: none; }
+        
+        /* Centralizar tudo e garantir que caiba na tela do celular */
         #menu-inicial {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: #111; display: flex; flex-direction: column;
-            align-items: center; justify-content: center; z-index: 9999; color: white;
+            position: fixed; inset: 0; background: #111; 
+            display: flex; flex-direction: column; align-items: center; 
+            justify-content: center; z-index: 9999; color: white;
         }
-        #ui-controles {
-            display: none; position: fixed; bottom: 30px; left: 50%; 
-            transform: translateX(-50%); z-index: 1000; text-align: center; 
-            color: white; background: rgba(0,0,0,0.8); padding: 20px; 
-            border-radius: 15px; width: 85%; pointer-events: none; /* Deixa o clique passar para a cena */
+
+        /* Painel Superior de Informações */
+        #display-info {
+            position: fixed; top: 0; left: 0; width: 100%; background: rgba(0,0,0,0.8);
+            color: #00ff00; padding: 15px; text-align: center; font-size: 20px;
+            font-weight: bold; z-index: 1000; border-bottom: 2px solid #00ff00;
+            display: none;
         }
-        #ui-controles button { pointer-events: auto; } /* Reativa clique só no botão */
+
+        /* Botão de Ação Principal (Embaixo) */
+        #controles-inferiores {
+            position: fixed; bottom: 40px; left: 0; width: 100%;
+            display: none; flex-direction: column; align-items: center; z-index: 1000;
+        }
+
+        .btn-acao {
+            background: #008cff; color: white; border: none; padding: 20px 40px;
+            border-radius: 50px; font-size: 18px; font-weight: bold; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5); width: 80%;
+        }
+
+        .btn-reset {
+            background: #444; color: #ccc; border: none; padding: 10px;
+            margin-top: 15px; border-radius: 5px; width: 40%;
+        }
+
         #btn-fechar {
-            display: none; position: fixed; top: 20px; right: 20px;
-            z-index: 10000; background: #ff4444; color: white; border: none;
-            padding: 10px 15px; border-radius: 50%; font-weight: bold;
-        }
-        .btn-principal {
-            background: #008cff; color: white; border: none; padding: 15px 30px;
-            border-radius: 30px; font-size: 18px; font-weight: bold;
+            position: fixed; top: 70px; right: 10px; z-index: 1001;
+            background: #ff4444; color: white; border: none; padding: 10px;
+            border-radius: 5px; display: none;
         }
     </style>
 </head>
 <body>
 
     <div id="menu-inicial">
-        <h1>Medidor AR</h1>
-        <button class="btn-principal" onclick="iniciarApp()">ABRIR CÂMERA</button>
+        <h1 style="margin-bottom: 20px;">MEDIDOR AR</h1>
+        <button class="btn-acao" onclick="iniciarApp()">ABRIR CÂMERA</button>
     </div>
 
-    <button id="btn-fechar" onclick="fecharApp()">X</button>
+    <div id="display-info">Pronto para medir</div>
+    <button id="btn-fechar" onclick="location.reload()">Sair</button>
 
-    <div id="ui-controles">
-        <div id="msg">Toque na tela para o Ponto A</div>
-        <button onclick="resetar()" style="margin-top:10px;">Limpar</button>
+    <div id="controles-inferiores">
+        <button id="btn-principal" class="btn-acao" onclick="processarClique()">MARCAR PONTO A</button>
+        <button class="btn-reset" onclick="resetar()">Limpar Tudo</button>
     </div>
 
-    <a-scene id="cena" embedded arjs="sourceType: webcam; debugUIEnabled: false;" style="display: none;">
-        <a-camera id="camera" position="0 0 0"></a-camera>
-        <a-entity id="pontos-container"></a-entity>
+    <a-scene embedded arjs="sourceType: webcam; debugUIEnabled: false;" style="display: none;" id="cena">
+        <a-camera id="camera" position="0 0 0">
+            <a-entity cursor="fuse: false" position="0 0 -1"
+                      geometry="primitive: ring; radiusInner: 0.02; radiusOuter: 0.03"
+                      material="color: white; shader: flat">
+            </a-entity>
+        </a-camera>
+        
+        <a-entity id="elementos-ar"></a-entity>
+        <a-entity id="linha-guia" line="color: yellow; opacity: 0.7"></a-entity>
     </a-scene>
 
     <script>
-        const menu = document.getElementById('menu-inicial');
-        const cena = document.getElementById('cena');
-        const ui = document.getElementById('ui-controles');
-        const btnFechar = document.getElementById('btn-fechar');
-        const container = document.querySelector('#pontos-container');
-        const display = document.querySelector('#msg');
-        
         let pontos = [];
+        const info = document.getElementById('display-info');
+        const btnPrincipal = document.getElementById('btn-principal');
+        const elementos = document.querySelector('#elementos-ar');
+        const linhaGuia = document.querySelector('#linha-guia');
+        const camera = document.querySelector('#camera');
 
         function iniciarApp() {
-            menu.style.display = 'none';
-            cena.style.display = 'block';
-            ui.style.display = 'block';
-            btnFechar.style.display = 'block';
+            document.getElementById('menu-inicial').style.display = 'none';
+            document.getElementById('cena').style.display = 'block';
+            document.getElementById('display-info').style.display = 'block';
+            document.getElementById('controles-inferiores').style.display = 'flex';
+            document.getElementById('btn-fechar').style.display = 'block';
             window.dispatchEvent(new Event('resize'));
         }
 
-        function fecharApp() {
-            location.reload();
+        // Loop de animação para a linha seguir a câmera
+        function update() {
+            if (pontos.length === 1) {
+                const posCam = new THREE.Vector3();
+                camera.object3D.getWorldPosition(posCam);
+                const p1 = pontos[0];
+                
+                linhaGuia.setAttribute('line', {
+                    start: `${p1.x} ${p1.y} ${p1.z}`,
+                    end: `${posCam.x} ${posCam.y} ${posCam.z}`
+                });
+
+                // Atualiza distância em tempo real no topo
+                const distAtual = p1.distanceTo(posCam);
+                info.innerText = `Medindo: ${distAtual.toFixed(2)}m`;
+            }
+            requestAnimationFrame(update);
+        }
+        update();
+
+        function processarClique() {
+            const posAtual = new THREE.Vector3();
+            camera.object3D.getWorldPosition(posAtual);
+            const pontoMarcado = posAtual.clone();
+
+            if (pontos.length === 0) {
+                // Marcou Ponto A
+                pontos.push(pontoMarcado);
+                criarEsfera(pontoMarcado, "yellow");
+                btnPrincipal.innerText = "MARCAR PONTO B";
+                btnPrincipal.style.background = "#28a745";
+                info.innerText = "Ponto A fixado. Mova-se!";
+            } 
+            else if (pontos.length === 1) {
+                // Marcou Ponto B
+                pontos.push(pontoMarcado);
+                criarEsfera(pontoMarcado, "#00ff00");
+                
+                const d = pontos[0].distanceTo(pontos[1]);
+                info.innerHTML = `DISTÂNCIA FINAL: ${d.toFixed(2)} metros`;
+                
+                btnPrincipal.innerText = "MEDIR NOVO";
+                btnPrincipal.style.background = "#008cff";
+                linhaGuia.setAttribute('line', 'opacity', 0); // Esconde linha guia
+                
+                // Desenha linha fixa final
+                const linhaFinal = document.createElement('a-entity');
+                linhaFinal.setAttribute('line', {
+                    start: `${pontos[0].x} ${pontos[0].y} ${pontos[0].z}`,
+                    end: `${pontos[1].x} ${pontos[1].y} ${pontos[1].z}`,
+                    color: '#00ff00'
+                });
+                elementos.appendChild(linhaFinal);
+            } else {
+                resetar();
+            }
         }
 
-        // Evento de clique na janela, mas filtrando elementos de UI
-        window.addEventListener('touchstart', function (e) {
-            if (e.target.tagName === 'BUTTON' || menu.style.display !== 'none') return;
-
-            const camEntity = document.querySelector('#camera');
-            const pos = new THREE.Vector3();
-            camEntity.object3D.getWorldPosition(pos);
-            
-            // Clonar a posição atual da câmera para salvar o ponto
-            const novaPosicao = pos.clone();
-            pontos.push(novaPosicao);
-
-            // Criar a esfera visual no local marcado
+        function criarEsfera(pos, cor) {
             const esfera = document.createElement('a-sphere');
-            esfera.setAttribute('position', `${novaPosicao.x} ${novaPosicao.y} ${novaPosicao.z}`);
-            esfera.setAttribute('radius', '0.02');
-            esfera.setAttribute('color', pontos.length === 1 ? "yellow" : "cyan");
-            container.appendChild(esfera);
-
-            if (pontos.length === 1) {
-                display.innerHTML = "Ponto A marcado!<br>Mova o celular e toque para o Ponto B";
-            } 
-            else if (pontos.length === 2) {
-                const p1 = pontos[0];
-                const p2 = pontos[1];
-                const d = p1.distanceTo(p2);
-                display.innerHTML = `<strong>Resultado: ${d.toFixed(2)} metros</strong><br>Toque para medir novamente`;
-                // Opcional: desenha uma linha entre eles
-                const linha = document.createElement('a-entity');
-                linha.setAttribute('line', {
-                    start: `${p1.x} ${p1.y} ${p1.z}`,
-                    end: `${p2.x} ${p2.y} ${p2.z}`,
-                    color: 'white'
-                });
-                container.appendChild(linha);
-            } else {
-                // Se clicar uma terceira vez, ele reseta e começa novo Ponto A
-                resetar();
-                // Adiciona o novo Ponto A imediatamente
-                pontos.push(novaPosicao);
-                container.appendChild(esfera);
-                display.innerHTML = "Ponto A marcado!";
-            }
-        });
+            esfera.setAttribute('position', `${pos.x} ${pos.y} ${pos.z}`);
+            esfera.setAttribute('radius', '0.03');
+            esfera.setAttribute('color', cor);
+            elementos.appendChild(esfera);
+        }
 
         function resetar() {
             pontos = [];
-            container.innerHTML = '';
-            display.innerText = "Toque para marcar o Ponto A";
+            elementos.innerHTML = '';
+            linhaGuia.setAttribute('line', 'opacity', 0.7);
+            btnPrincipal.innerText = "MARCAR PONTO A";
+            btnPrincipal.style.background = "#008cff";
+            info.innerText = "Pronto para medir";
         }
     </script>
 </body>
