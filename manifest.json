@@ -1,0 +1,18 @@
+{
+  "short_name": "MedidorAR",
+  "name": "Medidor de Distância Realidade Aumentada",
+  "description": "Mede a distância entre dois pontos usando a câmera.",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2541/2541740.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#000000",
+  "theme_color": "#000000"
+}
